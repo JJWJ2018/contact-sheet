@@ -23,8 +23,17 @@
   .head p { font-size: 11.5px; color: var(--dim); margin: 1px 0 0; }
   .body { padding: 16px; overflow-y: auto; flex: 1; }
 
-  .count { font-size: 13px; color: var(--muted); margin: 0 0 14px; }
+  .count { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
   .count b { color: var(--text); font-weight: 600; }
+
+  .preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); gap: 10px;
+    max-height: 220px; overflow-y: auto; margin-bottom: 18px; padding: 2px; }
+  .pcard { min-width: 0; }
+  .pcard .pthumb { width: 100%; aspect-ratio: 1; border-radius: 8px; object-fit: cover; background: var(--soft);
+    border: 1px solid var(--line); display: block; }
+  .pcard .pthumb.broken { display: flex; align-items: center; justify-content: center; color: var(--dim); }
+  .pcard .pname { font-size: 10.5px; color: var(--muted); margin: 4px 1px 0; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
 
   .label { font-size: 11.5px; font-weight: 600; color: var(--dim); text-transform: uppercase;
     letter-spacing: .04em; margin: 0 0 8px; }
@@ -50,10 +59,50 @@
     padding: 11px 14px; border-radius: var(--radius); line-height: 1.45; text-align: center; margin-top: 6px; }
   .msg.warn { background: #fff8ec; border-color: #fde4b3; color: #7a5a16; }
   .hint { font-size: 11.5px; color: var(--dim); margin-top: 12px; line-height: 1.45; }
+
+  /* ---- Inline sheet view (geen popup nodig) ---- */
+  #sheetView { position: fixed; inset: 0; z-index: 50; background: #eef0f2; overflow: auto; }
+  .sheetbar { position: sticky; top: 0; z-index: 2; display: flex; gap: 10px; align-items: center;
+    padding: 11px 16px; background: #fff; border-bottom: 1px solid var(--line); }
+  .sheetbar .title { font-size: 13.5px; font-weight: 600; }
+  .sheetbar .sub { font-size: 12px; color: var(--muted); }
+  .sheetbar .spacer { flex: 1; }
+  .sbtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: #fff;
+    color: var(--text); border-radius: 8px; padding: 8px 13px; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; font-family: inherit; }
+  .sbtn:hover { border-color: var(--accent); color: var(--accent); }
+  .sbtn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .sbtn.primary:hover { filter: brightness(.96); color: #fff; }
+  .sbtn svg { width: 15px; height: 15px; }
+
+  .sheet { display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 10mm; padding: 10mm;
+    background: #fff; margin: 16px auto; width: 210mm; min-height: 297mm; box-shadow: 0 1px 8px rgba(0,0,0,.14); }
+  .cell { margin: 0; display: flex; flex-direction: column; min-height: 0; break-inside: avoid; }
+  .imgbox { flex: 1; display: flex; align-items: center; justify-content: center; background: #f6f7f9;
+    border: 1px solid #eef0f2; overflow: hidden; min-height: 0; }
+  .imgbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .imgbox.broken { color: #9aa1ab; font-size: 11px; }
+  figcaption { padding-top: 6px; }
+  .m { display: flex; gap: 6px; font-size: 10px; line-height: 1.35; }
+  .m .k { color: #9aa1ab; flex: none; min-width: 56px; }
+  .m .v { color: #1a1d21; word-break: break-word; }
+  .sheet[style*="--cols:1"] .imgbox { min-height: 150mm; }
+  .sheet[style*="--cols:1"] .m { font-size: 12px; }
+  .sheet[style*="--cols:1"] .m .k { min-width: 90px; }
+
+  @media print {
+    @page { size: A4 portrait; margin: 12mm; }
+    html, body { background: #fff; height: auto; }
+    .wrap, .sheetbar { display: none !important; }
+    #sheetView { position: static; overflow: visible; background: #fff; }
+    .sheet { box-shadow: none; margin: 0; width: auto; min-height: auto; padding: 0;
+      break-after: page; page-break-after: always; }
+    .sheet:last-child { break-after: auto; page-break-after: auto; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap" id="wrap">
   <div class="head">
     <span class="badge">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -67,6 +116,7 @@
   <div class="body">
     <div id="main" style="display:none;">
       <p class="count" id="count"></p>
+      <div class="preview" id="preview"></div>
       <p class="label">Images per page</p>
       <div class="layouts" id="layouts"></div>
       <button class="btn" id="printBtn">
@@ -77,6 +127,30 @@
     </div>
     <div class="msg info" id="status">Connecting to Assets…</div>
   </div>
+</div>
+
+<!-- Inline sheet view (vervangt het oude popup-venster) -->
+<div id="sheetView" style="display:none;">
+  <div class="sheetbar">
+    <button class="sbtn" id="backBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Back
+    </button>
+    <div>
+      <div class="title">Contact sheet</div>
+      <div class="sub" id="sheetSub"></div>
+    </div>
+    <div class="spacer"></div>
+    <button class="sbtn" id="downloadBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download
+    </button>
+    <button class="sbtn primary" id="doPrintBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      Print
+    </button>
+  </div>
+  <div id="sheetPages"></div>
 </div>
 
 <script src="./config.js"></script>
@@ -122,17 +196,23 @@
     return asset.thumbnailUrl || asset.previewUrl || '';
   }
 
-  // Bouwt een volledig, self-contained HTML-document voor het printvenster.
-  function buildSheetHtml(items, perPage) {
+  function assetName(a) {
+    const md = a.metadata || {};
+    return fieldValue(md, 'filename') || fieldValue(md, 'dc:title') || fieldValue(md, 'title') || a.id || 'Asset';
+  }
+
+  // Bouwt de pagina's (de .sheet-secties). Wordt zowel inline als in de download gebruikt.
+  function buildSheetPages(items, perPage, forDownload) {
     const layoutKey = KEY[perPage];
     const fields = (cfg.metadataSetsToDisplay && cfg.metadataSetsToDisplay[layoutKey]) || ['filename'];
     const labels = cfg.fieldLabels || {};
     const ratingFields = cfg.ratingFields || [];
     const cols = GRID_COLS[perPage];
 
-    // In pagina's hakken
     const pages = [];
     for (let i = 0; i < items.length; i += perPage) pages.push(items.slice(i, i + perPage));
+
+    const onErr = forDownload ? '' : ' onerror="this.style.display=\'none\';this.parentNode.classList.add(\'broken\');this.parentNode.textContent=\'image unavailable\';"';
 
     const cellHtml = (a) => {
       const md = a.metadata || {};
@@ -144,71 +224,56 @@
         return `<div class="m"><span class="k">${esc(label)}</span><span class="v">${val}</span></div>`;
       }).join('');
       return `<figure class="cell">
-        <div class="imgbox"><img src="${esc(imageUrl(a, layoutKey))}" alt="" loading="eager" /></div>
+        <div class="imgbox"><img src="${esc(imageUrl(a, layoutKey))}" alt=""${onErr} /></div>
         <figcaption>${rows}</figcaption>
       </figure>`;
     };
 
-    const pagesHtml = pages.map((p) =>
+    return pages.map((p) =>
       `<section class="sheet" style="--cols:${cols}">${p.map(cellHtml).join('')}</section>`
     ).join('');
-
-    return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />
-<title>Contact sheet</title>
-<style>
-  @page { size: A4 portrait; margin: 12mm; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    color: #1a1d21; background: #f3f4f6; }
-  .bar { position: sticky; top: 0; display: flex; gap: 10px; align-items: center;
-    padding: 12px 18px; background: #fff; border-bottom: 1px solid #e8eaed; }
-  .bar b { font-size: 14px; } .bar span { color: #6b7280; font-size: 12.5px; }
-  .bar button { margin-left: auto; background: #0396e0; color: #fff; border: 0; border-radius: 8px;
-    padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
-  .sheet { display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 10mm;
-    padding: 10mm; background: #fff; margin: 14px auto; width: 210mm; min-height: 297mm;
-    box-shadow: 0 1px 6px rgba(0,0,0,.12); }
-  .cell { margin: 0; display: flex; flex-direction: column; min-height: 0; break-inside: avoid; }
-  .imgbox { flex: 1; display: flex; align-items: center; justify-content: center; background: #f6f7f9;
-    border: 1px solid #eef0f2; overflow: hidden; min-height: 0; }
-  .imgbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  figcaption { padding-top: 6px; }
-  .m { display: flex; gap: 6px; font-size: 10px; line-height: 1.35; }
-  .m .k { color: #9aa1ab; flex: none; min-width: 56px; }
-  .m .v { color: #1a1d21; word-break: break-word; }
-  /* één-per-pagina: grotere afbeelding, ruimere metadata */
-  .sheet[style*="--cols:1"] .imgbox { min-height: 150mm; }
-  .sheet[style*="--cols:1"] .m { font-size: 12px; }
-  .sheet[style*="--cols:1"] .m .k { min-width: 90px; }
-  @media print {
-    body { background: #fff; }
-    .bar { display: none; }
-    .sheet { box-shadow: none; margin: 0; width: auto; min-height: auto; padding: 0;
-      break-after: page; page-break-after: always; }
-    .sheet:last-child { break-after: auto; page-break-after: auto; }
-  }
-</style></head>
-<body>
-  <div class="bar">
-    <b>Contact sheet</b><span>${items.length} asset(s) · ${perPage} per page</span>
-    <button onclick="window.print()">Print</button>
-  </div>
-  ${pagesHtml}
-  <script>window.addEventListener('load', function(){ setTimeout(function(){ try{ window.focus(); window.print(); }catch(e){} }, 400); });<\/script>
-</body></html>`;
   }
 
+  // Toont de sheet inline (geen popup). Print via window.print() van dit document.
   function openPrintView() {
     if (!assets.length) return;
-    const w = window.open('', '_blank');
-    if (!w) {
-      $('hint').textContent = 'Popup blocked — allow popups for this site and try again.';
-      return;
-    }
-    w.document.open();
-    w.document.write(buildSheetHtml(assets, hitsOnPage));
-    w.document.close();
     $('hint').textContent = '';
+    $('sheetSub').textContent = `${assets.length} asset${assets.length === 1 ? '' : 's'} · ${hitsOnPage} per page`;
+    $('sheetPages').innerHTML = buildSheetPages(assets, hitsOnPage, false);
+    $('sheetView').style.display = 'block';
+    $('sheetView').scrollTop = 0;
+  }
+
+  function closePrintView() {
+    $('sheetView').style.display = 'none';
+  }
+
+  // Self-contained HTML voor de Download-knop (terugval als printen geblokkeerd is).
+  function buildStandaloneHtml(items, perPage) {
+    const css = `@page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1a1d21;background:#eef0f2}
+.sheet{display:grid;grid-template-columns:repeat(var(--cols),1fr);gap:10mm;padding:10mm;background:#fff;margin:16px auto;width:210mm;min-height:297mm;box-shadow:0 1px 8px rgba(0,0,0,.14)}
+.cell{margin:0;display:flex;flex-direction:column;min-height:0;break-inside:avoid}
+.imgbox{flex:1;display:flex;align-items:center;justify-content:center;background:#f6f7f9;border:1px solid #eef0f2;overflow:hidden;min-height:0}
+.imgbox img{max-width:100%;max-height:100%;object-fit:contain}
+figcaption{padding-top:6px}.m{display:flex;gap:6px;font-size:10px;line-height:1.35}
+.m .k{color:#9aa1ab;flex:none;min-width:56px}.m .v{color:#1a1d21;word-break:break-word}
+.sheet[style*="--cols:1"] .imgbox{min-height:150mm}.sheet[style*="--cols:1"] .m{font-size:12px}.sheet[style*="--cols:1"] .m .k{min-width:90px}
+@media print{body{background:#fff}.sheet{box-shadow:none;margin:0;width:auto;min-height:auto;padding:0;break-after:page;page-break-after:always}.sheet:last-child{break-after:auto;page-break-after:auto}}`;
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><title>Contact sheet</title><style>${css}</style></head>`
+      + `<body>${buildSheetPages(items, perPage, true)}`
+      + `<script>window.addEventListener('load',function(){setTimeout(function(){try{window.print();}catch(e){}},500);});<\/script>`
+      + `</body></html>`;
+  }
+
+  function downloadSheet() {
+    const html = buildStandaloneHtml(assets, hitsOnPage);
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'contact-sheet.html';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
 
   function renderLayouts() {
@@ -225,14 +290,27 @@
     });
   }
 
+  function renderPreview() {
+    $('preview').innerHTML = assets.map((a) => {
+      const url = a.thumbnailUrl || a.previewUrl || '';
+      const name = esc(assetName(a));
+      return `<div class="pcard" title="${name}">
+        <img class="pthumb" src="${esc(url)}" alt="" onerror="this.classList.add('broken');this.removeAttribute('src');this.textContent='—';" />
+        <div class="pname">${name}</div>
+      </div>`;
+    }).join('');
+  }
+
   function render() {
     if (!assets.length) {
+      closePrintView();
       showStatus('Select one or more assets, then open this action.', true);
       return;
     }
     $('status').style.display = 'none';
     $('main').style.display = 'block';
     $('count').innerHTML = `<b>${assets.length}</b> asset${assets.length === 1 ? '' : 's'} selected`;
+    renderPreview();
     renderLayouts();
   }
 
@@ -243,6 +321,9 @@
       sync();
       client.onSelectionUpdate(() => sync());
       $('printBtn').addEventListener('click', openPrintView);
+      $('backBtn').addEventListener('click', closePrintView);
+      $('doPrintBtn').addEventListener('click', () => { try { window.print(); } catch (e) {} });
+      $('downloadBtn').addEventListener('click', downloadSheet);
     } catch (err) {
       showStatus('Could not connect to Assets (' + ((err && err.message) || err) + ').', true);
     }
