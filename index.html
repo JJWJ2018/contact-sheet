@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Print contact sheet</title>
+<style>
+  :root {
+    --bg: #ffffff; --soft: #f6f7f9; --line: #e8eaed; --text: #1a1d21;
+    --muted: #6b7280; --dim: #9aa1ab; --accent: #0396e0; --accent-50: #e6f4fc;
+    --radius: 12px; --shadow: 0 1px 3px rgba(16,24,40,.06), 0 1px 2px rgba(16,24,40,.04);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  .wrap { display: flex; flex-direction: column; height: 100vh; }
+  .head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .head .badge { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-50); color: var(--accent);
+    display: flex; align-items: center; justify-content: center; flex: none; }
+  .head .badge svg { width: 17px; height: 17px; }
+  .head h1 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+  .head p { font-size: 11.5px; color: var(--dim); margin: 1px 0 0; }
+  .body { padding: 16px; overflow-y: auto; flex: 1; }
+
+  .count { font-size: 13px; color: var(--muted); margin: 0 0 14px; }
+  .count b { color: var(--text); font-weight: 600; }
+
+  .label { font-size: 11.5px; font-weight: 600; color: var(--dim); text-transform: uppercase;
+    letter-spacing: .04em; margin: 0 0 8px; }
+  .layouts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
+  .layout { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); cursor: pointer;
+    padding: 10px 0 8px; text-align: center; transition: border-color .12s, background .12s; }
+  .layout:hover { border-color: var(--accent); }
+  .layout.sel { border-color: var(--accent); background: var(--accent-50); }
+  .layout .grid { display: grid; gap: 2px; width: 26px; margin: 0 auto 6px; }
+  .layout .grid span { background: var(--dim); border-radius: 1px; aspect-ratio: 1.3; }
+  .layout.sel .grid span { background: var(--accent); }
+  .layout .n { font-size: 11px; color: var(--muted); }
+  .layout.sel .n { color: var(--accent); font-weight: 600; }
+
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+    background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 12px;
+    font-size: 13.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn:hover { filter: brightness(.96); }
+  .btn:disabled { background: var(--line); color: var(--dim); cursor: not-allowed; }
+  .btn svg { width: 16px; height: 16px; }
+
+  .msg { font-size: 12.5px; color: var(--muted); background: var(--soft); border: 1px solid var(--line);
+    padding: 11px 14px; border-radius: var(--radius); line-height: 1.45; text-align: center; margin-top: 6px; }
+  .msg.warn { background: #fff8ec; border-color: #fde4b3; color: #7a5a16; }
+  .hint { font-size: 11.5px; color: var(--dim); margin-top: 12px; line-height: 1.45; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <span class="badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    </span>
+    <div>
+      <h1>Print contact sheet</h1>
+      <p>Print selected assets on a sheet</p>
+    </div>
+  </div>
+
+  <div class="body">
+    <div id="main" style="display:none;">
+      <p class="count" id="count"></p>
+      <p class="label">Images per page</p>
+      <div class="layouts" id="layouts"></div>
+      <button class="btn" id="printBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        Open print view
+      </button>
+      <p class="hint" id="hint"></p>
+    </div>
+    <div class="msg info" id="status">Connecting to Assets…</div>
+  </div>
+</div>
+
+<script src="./config.js"></script>
+<script type="module">
+  import { Assets10Client } from 'https://unpkg.com/@woodwing/a10-client-sdk@1.0.0/dist/index.mjs';
+
+  const cfg = window.CONTACT_SHEET_CONFIG || {};
+  const $ = (id) => document.getElementById(id);
+  const LAYOUTS = [1, 2, 6, 12];
+  const KEY = { 1: 'onePerPage', 2: 'twoPerPage', 6: 'sixPerPage', 12: 'twelvePerPage' };
+  const GRID_COLS = { 1: 1, 2: 1, 6: 2, 12: 3 };
+
+  let assets = [];
+  let hitsOnPage = LAYOUTS.includes(cfg.defaultHitsOnPage) ? cfg.defaultHitsOnPage : 2;
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function showStatus(text, warn) {
+    $('status').className = 'msg' + (warn ? ' warn' : ' info');
+    $('status').textContent = text;
+    $('status').style.display = 'block';
+    $('main').style.display = 'none';
+  }
+
+  function fieldValue(md, field) {
+    const v = md ? md[field] : undefined;
+    if (Array.isArray(v)) return v.join(', ');
+    if (v && typeof v === 'object') return v.value != null ? v.value : JSON.stringify(v);
+    return v;
+  }
+
+  function stars(v) {
+    const n = Math.max(0, Math.min(5, Math.round(parseFloat(v) || 0)));
+    return '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
+  }
+
+  function imageUrl(asset, layoutKey) {
+    const want = (cfg.imageSource && cfg.imageSource[layoutKey]) || 'preview';
+    if (want === 'preview') return asset.previewUrl || asset.thumbnailUrl || '';
+    return asset.thumbnailUrl || asset.previewUrl || '';
+  }
+
+  // Bouwt een volledig, self-contained HTML-document voor het printvenster.
+  function buildSheetHtml(items, perPage) {
+    const layoutKey = KEY[perPage];
+    const fields = (cfg.metadataSetsToDisplay && cfg.metadataSetsToDisplay[layoutKey]) || ['filename'];
+    const labels = cfg.fieldLabels || {};
+    const ratingFields = cfg.ratingFields || [];
+    const cols = GRID_COLS[perPage];
+
+    // In pagina's hakken
+    const pages = [];
+    for (let i = 0; i < items.length; i += perPage) pages.push(items.slice(i, i + perPage));
+
+    const cellHtml = (a) => {
+      const md = a.metadata || {};
+      const rows = fields.map((f) => {
+        const raw = fieldValue(md, f);
+        if (raw == null || raw === '') return '';
+        const label = labels[f] || f;
+        const val = ratingFields.includes(f) ? stars(raw) : esc(raw);
+        return `<div class="m"><span class="k">${esc(label)}</span><span class="v">${val}</span></div>`;
+      }).join('');
+      return `<figure class="cell">
+        <div class="imgbox"><img src="${esc(imageUrl(a, layoutKey))}" alt="" loading="eager" /></div>
+        <figcaption>${rows}</figcaption>
+      </figure>`;
+    };
+
+    const pagesHtml = pages.map((p) =>
+      `<section class="sheet" style="--cols:${cols}">${p.map(cellHtml).join('')}</section>`
+    ).join('');
+
+    return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />
+<title>Contact sheet</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1a1d21; background: #f3f4f6; }
+  .bar { position: sticky; top: 0; display: flex; gap: 10px; align-items: center;
+    padding: 12px 18px; background: #fff; border-bottom: 1px solid #e8eaed; }
+  .bar b { font-size: 14px; } .bar span { color: #6b7280; font-size: 12.5px; }
+  .bar button { margin-left: auto; background: #0396e0; color: #fff; border: 0; border-radius: 8px;
+    padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .sheet { display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 10mm;
+    padding: 10mm; background: #fff; margin: 14px auto; width: 210mm; min-height: 297mm;
+    box-shadow: 0 1px 6px rgba(0,0,0,.12); }
+  .cell { margin: 0; display: flex; flex-direction: column; min-height: 0; break-inside: avoid; }
+  .imgbox { flex: 1; display: flex; align-items: center; justify-content: center; background: #f6f7f9;
+    border: 1px solid #eef0f2; overflow: hidden; min-height: 0; }
+  .imgbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  figcaption { padding-top: 6px; }
+  .m { display: flex; gap: 6px; font-size: 10px; line-height: 1.35; }
+  .m .k { color: #9aa1ab; flex: none; min-width: 56px; }
+  .m .v { color: #1a1d21; word-break: break-word; }
+  /* één-per-pagina: grotere afbeelding, ruimere metadata */
+  .sheet[style*="--cols:1"] .imgbox { min-height: 150mm; }
+  .sheet[style*="--cols:1"] .m { font-size: 12px; }
+  .sheet[style*="--cols:1"] .m .k { min-width: 90px; }
+  @media print {
+    body { background: #fff; }
+    .bar { display: none; }
+    .sheet { box-shadow: none; margin: 0; width: auto; min-height: auto; padding: 0;
+      break-after: page; page-break-after: always; }
+    .sheet:last-child { break-after: auto; page-break-after: auto; }
+  }
+</style></head>
+<body>
+  <div class="bar">
+    <b>Contact sheet</b><span>${items.length} asset(s) · ${perPage} per page</span>
+    <button onclick="window.print()">Print</button>
+  </div>
+  ${pagesHtml}
+  <script>window.addEventListener('load', function(){ setTimeout(function(){ try{ window.focus(); window.print(); }catch(e){} }, 400); });<\/script>
+</body></html>`;
+  }
+
+  function openPrintView() {
+    if (!assets.length) return;
+    const w = window.open('', '_blank');
+    if (!w) {
+      $('hint').textContent = 'Popup blocked — allow popups for this site and try again.';
+      return;
+    }
+    w.document.open();
+    w.document.write(buildSheetHtml(assets, hitsOnPage));
+    w.document.close();
+    $('hint').textContent = '';
+  }
+
+  function renderLayouts() {
+    $('layouts').innerHTML = LAYOUTS.map((n) => {
+      const cells = Array.from({ length: Math.min(n, 4) }, () => '<span></span>').join('');
+      const cols = GRID_COLS[n];
+      return `<div class="layout ${n === hitsOnPage ? 'sel' : ''}" data-n="${n}">
+        <div class="grid" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>
+        <div class="n">${n}/page</div>
+      </div>`;
+    }).join('');
+    $('layouts').querySelectorAll('.layout').forEach((el) => {
+      el.addEventListener('click', () => { hitsOnPage = parseInt(el.dataset.n, 10); renderLayouts(); });
+    });
+  }
+
+  function render() {
+    if (!assets.length) {
+      showStatus('Select one or more assets, then open this action.', true);
+      return;
+    }
+    $('status').style.display = 'none';
+    $('main').style.display = 'block';
+    $('count').innerHTML = `<b>${assets.length}</b> asset${assets.length === 1 ? '' : 's'} selected`;
+    renderLayouts();
+  }
+
+  (async () => {
+    try {
+      const client = await Assets10Client.bootstrap({ handshakeTimeoutMs: 6000 });
+      const sync = () => { assets = (client.getSelection() || []).filter(Boolean); render(); };
+      sync();
+      client.onSelectionUpdate(() => sync());
+      $('printBtn').addEventListener('click', openPrintView);
+    } catch (err) {
+      showStatus('Could not connect to Assets (' + ((err && err.message) || err) + ').', true);
+    }
+  })();
+</script>
+</body>
+</html>
