@@ -26,14 +26,20 @@
   .count { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
   .count b { color: var(--text); font-weight: 600; }
 
-  .preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); gap: 10px;
-    max-height: 220px; overflow-y: auto; margin-bottom: 18px; padding: 2px; }
-  .pcard { min-width: 0; }
-  .pcard .pthumb { width: 100%; aspect-ratio: 1; border-radius: 8px; object-fit: cover; background: var(--soft);
-    border: 1px solid var(--line); display: block; }
-  .pcard .pthumb.broken { display: flex; align-items: center; justify-content: center; color: var(--dim); }
-  .pcard .pname { font-size: 10.5px; color: var(--muted); margin: 4px 1px 0; white-space: nowrap;
+  /* Live WYSIWYG-preview: verkleinde A4-pagina('s) in het gekozen raster. */
+  .preview { margin-top: 6px; }
+  .psheet { width: 100%; max-width: 320px; margin: 0 auto 14px; background: #fff; border: 1px solid var(--line);
+    border-radius: 4px; box-shadow: var(--shadow); display: grid; grid-template-columns: repeat(var(--cols), 1fr);
+    gap: 4%; padding: 5%; aspect-ratio: 210 / 297; }
+  .pcell { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .pimg { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+    background: var(--soft); border: 1px solid var(--line); overflow: hidden; }
+  .pimg img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .pimg.broken { color: var(--dim); font-size: 8px; }
+  .pcap { margin-top: 3px; overflow: hidden; }
+  .pcap .pl { font-size: 7px; line-height: 1.35; color: var(--muted); white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }
+  .psheet[style*="--cols:1"] .pcap .pl { font-size: 9px; }
 
   .label { font-size: 11.5px; font-weight: 600; color: var(--dim); text-transform: uppercase;
     letter-spacing: .04em; margin: 0 0 8px; }
@@ -116,7 +122,6 @@
   <div class="body">
     <div id="main" style="display:none;">
       <p class="count" id="count"></p>
-      <div class="preview" id="preview"></div>
       <p class="label">Images per page</p>
       <div class="layouts" id="layouts"></div>
       <button class="btn" id="printBtn">
@@ -124,6 +129,8 @@
         Open print view
       </button>
       <p class="hint" id="hint"></p>
+      <p class="label" style="margin-top:22px;">Preview</p>
+      <div class="preview" id="preview"></div>
     </div>
     <div class="msg info" id="status">Connecting to Assets…</div>
   </div>
@@ -286,19 +293,40 @@ figcaption{padding-top:6px}.m{display:flex;gap:6px;font-size:10px;line-height:1.
       </div>`;
     }).join('');
     $('layouts').querySelectorAll('.layout').forEach((el) => {
-      el.addEventListener('click', () => { hitsOnPage = parseInt(el.dataset.n, 10); renderLayouts(); });
+      el.addEventListener('click', () => { hitsOnPage = parseInt(el.dataset.n, 10); renderLayouts(); renderPreview(); });
     });
   }
 
+  // Live preview: verkleinde A4-pagina's in het gekozen raster, mirror van de print view.
   function renderPreview() {
-    $('preview').innerHTML = assets.map((a) => {
+    const layoutKey = KEY[hitsOnPage];
+    const allFields = (cfg.metadataSetsToDisplay && cfg.metadataSetsToDisplay[layoutKey]) || ['filename'];
+    const fields = allFields.slice(0, hitsOnPage >= 6 ? 1 : 4); // bij kleine cellen alleen filename
+    const labels = cfg.fieldLabels || {};
+    const ratingFields = cfg.ratingFields || [];
+    const cols = GRID_COLS[hitsOnPage];
+
+    const pages = [];
+    for (let i = 0; i < assets.length; i += hitsOnPage) pages.push(assets.slice(i, i + hitsOnPage));
+
+    const cell = (a) => {
+      const md = a.metadata || {};
       const url = a.thumbnailUrl || a.previewUrl || '';
-      const name = esc(assetName(a));
-      return `<div class="pcard" title="${name}">
-        <img class="pthumb" src="${esc(url)}" alt="" onerror="this.classList.add('broken');this.removeAttribute('src');this.textContent='—';" />
-        <div class="pname">${name}</div>
+      const cap = fields.map((f) => {
+        const raw = fieldValue(md, f);
+        if (raw == null || raw === '') return '';
+        const val = ratingFields.includes(f) ? stars(raw) : esc(raw);
+        return `<div class="pl">${val}</div>`;
+      }).join('');
+      return `<div class="pcell">
+        <div class="pimg"><img src="${esc(url)}" alt="" onerror="this.style.display='none';this.parentNode.classList.add('broken');this.parentNode.textContent='—';" /></div>
+        <div class="pcap">${cap}</div>
       </div>`;
-    }).join('');
+    };
+
+    $('preview').innerHTML = pages.map((p) =>
+      `<div class="psheet" style="--cols:${cols}">${p.map(cell).join('')}</div>`
+    ).join('');
   }
 
   function render() {
