@@ -53,6 +53,7 @@
   .layout.sel .grid span { background: var(--accent); }
   .layout .n { font-size: 11px; color: var(--muted); }
   .layout.sel .n { color: var(--accent); font-weight: 600; }
+  .layout.disabled { opacity: .38; cursor: not-allowed; pointer-events: none; }
 
   .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
     background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 12px;
@@ -283,16 +284,25 @@ figcaption{padding-top:6px}.m{display:flex;gap:6px;font-size:10px;line-height:1.
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
 
+  // Grootste zinvolle layout: de kleinste bucket die alles op één pagina past.
+  // Alles daarboven is overbodig (zou dezelfde ene pagina opleveren) en wordt uitgeschakeld.
+  function maxPerPage() {
+    const c = assets.length || 1;
+    return LAYOUTS.find((n) => n >= c) || LAYOUTS[LAYOUTS.length - 1];
+  }
+
   function renderLayouts() {
+    const max = maxPerPage();
     $('layouts').innerHTML = LAYOUTS.map((n) => {
       const cells = Array.from({ length: Math.min(n, 4) }, () => '<span></span>').join('');
       const cols = GRID_COLS[n];
-      return `<div class="layout ${n === hitsOnPage ? 'sel' : ''}" data-n="${n}">
+      const disabled = n > max;
+      return `<div class="layout ${n === hitsOnPage ? 'sel' : ''} ${disabled ? 'disabled' : ''}" data-n="${n}"${disabled ? ' title="Not enough images selected for this layout"' : ''}>
         <div class="grid" style="grid-template-columns:repeat(${cols},1fr)">${cells}</div>
         <div class="n">${n}/page</div>
       </div>`;
     }).join('');
-    $('layouts').querySelectorAll('.layout').forEach((el) => {
+    $('layouts').querySelectorAll('.layout:not(.disabled)').forEach((el) => {
       el.addEventListener('click', () => { hitsOnPage = parseInt(el.dataset.n, 10); renderLayouts(); renderPreview(); });
     });
   }
@@ -337,6 +347,7 @@ figcaption{padding-top:6px}.m{display:flex;gap:6px;font-size:10px;line-height:1.
     }
     $('status').style.display = 'none';
     $('main').style.display = 'block';
+    if (hitsOnPage > maxPerPage()) hitsOnPage = maxPerPage(); // val terug als de keuze niet meer past
     $('count').innerHTML = `<b>${assets.length}</b> asset${assets.length === 1 ? '' : 's'} selected`;
     renderPreview();
     renderLayouts();
